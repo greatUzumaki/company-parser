@@ -1,0 +1,32 @@
+# App services only. Postgres + Redis already run in your Docker.
+# Backend reaches them via host.docker.internal (works on Docker Desktop).
+# If your DB/Redis live on a named compose network instead, uncomment the
+# `networks` blocks and set the external network name.
+
+services:
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      # Override host so the container reaches your host-side DB/Redis.
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+    ports:
+      - "8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # networks: [data]
+
+  frontend:
+    build: ./frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+# networks:
+#   data:
+#     external: true
+#     name: <your-existing-network>

@@ -1,0 +1,20 @@
+# Env / secrets
+.env
+.env.local
+
+# Go
+/bin/
+*.test
+*.out
+
+# Node / Next.js
+node_modules/
+frontend/.next/
+frontend/out/
+frontend/next-env.d.ts
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
