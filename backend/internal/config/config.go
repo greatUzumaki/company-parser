@@ -18,7 +18,11 @@ type Config struct {
 	WikidataURL   string
 	AllowedOrigin string
 
-	// SMTP — user-provided; email campaigns are disabled when SMTPHost is empty.
+	// Mail — email campaigns. MailProvider is "smtp" (default), "resend", or
+	// "brevo". HTTP providers (resend/brevo) work over HTTPS where SMTP ports
+	// are blocked. Campaigns are disabled unless a provider is configured.
+	MailProvider string
+	MailAPIKey   string
 	SMTPHost     string
 	SMTPPort     int
 	SMTPUsername string
@@ -41,6 +45,8 @@ func Load() (Config, error) {
 		WikidataURL:   getenv("WIKIDATA_URL", "https://query.wikidata.org/sparql"),
 		AllowedOrigin: getenv("ALLOWED_ORIGIN", "http://localhost:3000"),
 
+		MailProvider:    getenv("MAIL_PROVIDER", "smtp"),
+		MailAPIKey:      os.Getenv("MAIL_API_KEY"),
 		SMTPHost:        os.Getenv("SMTP_HOST"),
 		SMTPPort:        atoiDefault(os.Getenv("SMTP_PORT"), 587),
 		SMTPUsername:    os.Getenv("SMTP_USERNAME"),

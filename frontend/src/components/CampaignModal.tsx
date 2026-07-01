@@ -60,6 +60,7 @@ export function CampaignModal({
               failed: e.failed ?? p?.failed ?? 0,
               total: p?.total ?? recipientCount,
             }));
+            if (e.type === "failed" && e.message) setError(e.message);
             break;
           case "done":
             setSending(false);
@@ -77,10 +78,19 @@ export function CampaignModal({
       },
       ac.signal,
     ).catch((err) => {
-      if (ac.signal.aborted) return;
       setSending(false);
+      if (ac.signal.aborted) {
+        setDoneMsg(t("campaign.cancelled"));
+        return;
+      }
       setError(err instanceof Error ? err.message : "failed");
     });
+  };
+
+  const cancel = () => {
+    abortRef.current?.abort();
+    setSending(false);
+    setDoneMsg(t("campaign.cancelled"));
   };
 
   return (
@@ -215,17 +225,25 @@ export function CampaignModal({
           >
             {t("campaign.close")}
           </button>
-          <button
-            type="button"
-            onClick={run}
-            disabled={!canSend}
-            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
-          >
-            {sending && (
+          {sending ? (
+            <button
+              type="button"
+              onClick={cancel}
+              className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-red-500"
+            >
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden />
-            )}
-            {sending ? t("campaign.sending") : dryRun ? t("campaign.sendDry") : t("campaign.send")}
-          </button>
+              {t("campaign.stop")}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={run}
+              disabled={!canSend}
+              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
+            >
+              {dryRun ? t("campaign.sendDry") : t("campaign.send")}
+            </button>
+          )}
         </div>
       </motion.div>
     </div>

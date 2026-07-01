@@ -58,7 +58,9 @@ func run(logger *slog.Logger) error {
 	geocoder := nominatim.New(&http.Client{Timeout: 15 * time.Second}, cfg.NominatimURL)
 	svc := service.New(providers, st, rc)
 
-	smtp, err := mailer.NewSMTP(mailer.Config{
+	m, err := mailer.New(mailer.Config{
+		Provider: cfg.MailProvider,
+		APIKey:   cfg.MailAPIKey,
 		Host:     cfg.SMTPHost,
 		Port:     cfg.SMTPPort,
 		Username: cfg.SMTPUsername,
@@ -67,14 +69,10 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	// smtp is nil when SMTP is unconfigured; campaign.Enabled() then reports false.
-	var m mailer.Mailer
-	if smtp != nil {
-		m = smtp
-	}
-	camp := campaign.New(m, cfg.SMTPFrom, cfg.CampaignDelayMS, cfg.CampaignMax)
+	// m is nil when no mail provider is configured; campaign.Enabled() then false.
+	camp := campaign.New(m, cfg.SMTPFrom, cfg.CampaignDelayMS, cfg.CampaignMax, logger)
 	if camp.Enabled() {
-		logger.Info("email campaigns enabled", "from", cfg.SMTPFrom)
+		logger.Info("email campaigns enabled", "provider", cfg.MailProvider, "from", cfg.SMTPFrom)
 	}
 
 	srv := api.NewServer(svc, st, geocoder, camp, logger)

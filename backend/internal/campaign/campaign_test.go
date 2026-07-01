@@ -33,7 +33,7 @@ func sampleRecipients() []Recipient {
 }
 
 func newSvc(m *fakeMailer) *Service {
-	return New(m, "Sender <from@test.com>", 0, 100)
+	return New(m, "Sender <from@test.com>", 0, 100, nil)
 }
 
 func drain(t *testing.T, run func(emit func(Event) error) error) []Event {
@@ -118,7 +118,7 @@ func TestSendReportsFailures(t *testing.T) {
 }
 
 func TestDisabledWithoutMailer(t *testing.T) {
-	svc := New(nil, "from@test.com", 0, 100)
+	svc := New(nil, "from@test.com", 0, 100, nil)
 	if svc.Enabled() {
 		t.Error("should be disabled with nil mailer")
 	}

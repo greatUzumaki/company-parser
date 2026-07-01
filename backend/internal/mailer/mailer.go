@@ -1,72 +1,76 @@
-// Package mailer sends email through a user-configured SMTP server. The user
-// owns the SMTP account and is the accountable sender; this package never
-// stores or logs credentials beyond the process config.
+// Package mailer sends email through a user-configured provider: SMTP, or an
+// HTTP API (Resend / Brevo). HTTP providers work over HTTPS, so they send even
+// in networks that block outbound SMTP ports. The user owns the account and is
+// the accountable sender; credentials live only in process config.
 package mailer
 
 import (
 	"context"
 	"fmt"
-
-	"github.com/wneessen/go-mail"
+	"net/http"
+	"strings"
+	"time"
 )
 
-// Mailer sends one HTML email. Implemented by SMTPMailer; faked in tests.
+// Mailer sends one HTML email. Implemented by the SMTP and HTTP providers.
 type Mailer interface {
 	Send(ctx context.Context, from, to, subject, htmlBody string) error
 }
 
-// Config holds SMTP connection settings.
+// Config selects and configures a provider.
 type Config struct {
-	Host     string
+	Provider string // "smtp" | "resend" | "brevo"
+	APIKey   string // for resend/brevo
+
+	Host     string // smtp
 	Port     int
 	Username string
 	Password string
 }
 
-// SMTPMailer sends via SMTP with STARTTLS.
-type SMTPMailer struct {
-	client *mail.Client
+// New builds the configured Mailer, or (nil, nil) when nothing is configured
+// (campaigns then report disabled).
+func New(cfg Config) (Mailer, error) {
+	switch strings.ToLower(strings.TrimSpace(cfg.Provider)) {
+	case "resend":
+		if cfg.APIKey == "" {
+			return nil, nil
+		}
+		return &httpMailer{client: httpClient(), provider: providerResend, apiKey: cfg.APIKey}, nil
+	case "brevo":
+		if cfg.APIKey == "" {
+			return nil, nil
+		}
+		return &httpMailer{client: httpClient(), provider: providerBrevo, apiKey: cfg.APIKey}, nil
+	default: // smtp
+		sm, err := NewSMTP(Config{Host: cfg.Host, Port: cfg.Port, Username: cfg.Username, Password: cfg.Password})
+		if err != nil {
+			return nil, err
+		}
+		if sm == nil {
+			return nil, nil // avoid a non-nil interface wrapping a nil pointer
+		}
+		return sm, nil
+	}
 }
 
-// NewSMTP builds an SMTPMailer. Returns (nil, nil) when Host is empty so the
-// caller can treat campaigns as disabled without an error.
-func NewSMTP(cfg Config) (*SMTPMailer, error) {
-	if cfg.Host == "" {
-		return nil, nil
+func httpClient() *http.Client { return &http.Client{Timeout: 30 * time.Second} }
+
+// splitAddress parses "Name <email>" into its parts. When there is no name it
+// returns the address for both.
+func splitAddress(from string) (name, email string) {
+	from = strings.TrimSpace(from)
+	if i := strings.LastIndex(from, "<"); i >= 0 && strings.HasSuffix(from, ">") {
+		return strings.TrimSpace(from[:i]), strings.TrimSpace(from[i+1 : len(from)-1])
 	}
-	opts := []mail.Option{
-		mail.WithPort(cfg.Port),
-		mail.WithTLSPolicy(mail.TLSOpportunistic),
-	}
-	// Only authenticate when credentials are supplied (local relays like
-	// MailHog accept anonymous mail).
-	if cfg.Username != "" {
-		opts = append(opts,
-			mail.WithSMTPAuth(mail.SMTPAuthPlain),
-			mail.WithUsername(cfg.Username),
-			mail.WithPassword(cfg.Password),
-		)
-	}
-	client, err := mail.NewClient(cfg.Host, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("mailer: new client: %w", err)
-	}
-	return &SMTPMailer{client: client}, nil
+	return "", from
 }
 
-// Send delivers one HTML message.
-func (m *SMTPMailer) Send(ctx context.Context, from, to, subject, htmlBody string) error {
-	msg := mail.NewMsg()
-	if err := msg.From(from); err != nil {
-		return fmt.Errorf("mailer: from %q: %w", from, err)
+// httpError formats a non-2xx API response.
+func httpError(provider string, status int, body string) error {
+	body = strings.TrimSpace(body)
+	if len(body) > 300 {
+		body = body[:300]
 	}
-	if err := msg.To(to); err != nil {
-		return fmt.Errorf("mailer: to %q: %w", to, err)
-	}
-	msg.Subject(subject)
-	msg.SetBodyString(mail.TypeTextHTML, htmlBody)
-	if err := m.client.DialAndSendWithContext(ctx, msg); err != nil {
-		return fmt.Errorf("mailer: send: %w", err)
-	}
-	return nil
+	return fmt.Errorf("mailer(%s): status %d: %s", provider, status, body)
 }

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"log/slog"
 	"net/mail"
 	"strings"
 	"time"
@@ -43,16 +44,21 @@ type Service struct {
 	from   string
 	delay  time.Duration
 	max    int
+	logger *slog.Logger
 }
 
 // New wires the mailer and sending policy. A nil mailer or empty from disables
 // campaigns (Enabled reports false).
-func New(m mailerpkg.Mailer, from string, delayMS, max int) *Service {
+func New(m mailerpkg.Mailer, from string, delayMS, max int, logger *slog.Logger) *Service {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Service{
 		mailer: m,
 		from:   from,
 		delay:  time.Duration(delayMS) * time.Millisecond,
 		max:    max,
+		logger: logger,
 	}
 }
 
@@ -103,8 +109,14 @@ func (s *Service) Send(ctx context.Context, subject, body string, in []Recipient
 		}
 
 		if err := s.mailer.Send(ctx, s.from, r.Email, subj, htmlBody); err != nil {
+			// A cancelled context means the user stopped the campaign, not a
+			// send failure — end cleanly.
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			failed++
-			if e := emit(Event{Type: "failed", Email: r.Email, Name: r.Name, Sent: sent, Failed: failed, Message: "send failed"}); e != nil {
+			s.logger.Error("campaign send failed", "to", r.Email, "err", err)
+			if e := emit(Event{Type: "failed", Email: r.Email, Name: r.Name, Sent: sent, Failed: failed, Message: reason(err)}); e != nil {
 				return e
 			}
 			continue
@@ -116,6 +128,23 @@ func (s *Service) Send(ctx context.Context, subject, body string, in []Recipient
 	}
 
 	return emit(Event{Type: "done", Sent: sent, Failed: failed, Total: len(recipients), DryRun: dryRun})
+}
+
+// reason turns an SMTP error into a short, user-facing message.
+func reason(err error) string {
+	s := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(s, "timeout") || strings.Contains(s, "deadline") || strings.Contains(s, "i/o timeout"):
+		return "connection timed out (SMTP blocked by network?)"
+	case strings.Contains(s, "auth") || strings.Contains(s, "535") || strings.Contains(s, "credential") || strings.Contains(s, "password"):
+		return "authentication failed (check SMTP username/app password)"
+	case strings.Contains(s, "connection refused") || strings.Contains(s, "no such host") || strings.Contains(s, "dial"):
+		return "cannot reach SMTP server (check host/port)"
+	case strings.Contains(s, "tls") || strings.Contains(s, "certificate"):
+		return "TLS handshake failed"
+	default:
+		return "send failed"
+	}
 }
 
 // collect returns unique, syntactically valid recipients, capped at max.
