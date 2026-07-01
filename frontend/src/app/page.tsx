@@ -41,7 +41,9 @@ export default function Home() {
   const [sources, setSources] = useState<SourceProgress[]>([]);
   const abortRef = useRef<AbortController | null>(null);
 
-  const runSearch = (force = false) => {
+  const runSearch = (forceArg = false) => {
+    // Coerce so a MouseEvent passed by an onClick never leaks into the request.
+    const force = forceArg === true;
     if (!region) return;
     abortRef.current?.abort();
     const ac = new AbortController();

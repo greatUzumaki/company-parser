@@ -1,11 +1,13 @@
 // Frontend mirrors of the backend DTOs. Keep these in lockstep with the Go
 // structs in backend/internal/domain and backend/internal/store.
 
-/** A search area selected on the map. bbox is [minLon, minLat, maxLon, maxLat]. */
+/** A search area selected on the map. bbox is [minLon, minLat, maxLon, maxLat].
+ *  polygon (a drawn circle/rectangle/freehand zone) is a ring of [lon, lat]. */
 export interface Region {
   name: string;
   osmAreaId: number;
   bbox: [number, number, number, number];
+  polygon?: [number, number][];
 }
 
 /** Search filters. The booleans are "gap" filters: true keeps companies that

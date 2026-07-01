@@ -111,7 +111,7 @@ func (c *Client) Search(ctx context.Context, r domain.Region, f domain.Filter) (
 		if !ok {
 			continue
 		}
-		if f.Match(company) {
+		if f.Match(company) && r.Accept(company.Lat, company.Lon) {
 			companies = append(companies, company)
 		}
 	}

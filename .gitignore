@@ -1,6 +1,14 @@
 # Env / secrets
 .env
 .env.local
+*.pem
+*.key
+
+# Playwright MCP / test artifacts
+.playwright-mcp/
+**/.playwright-mcp/
+/*.png
+/bin/server
 
 # Go
 /bin/

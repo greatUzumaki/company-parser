@@ -33,14 +33,23 @@ func BuildQuery(r domain.Region, f domain.Filter) string {
 	var b strings.Builder
 	b.WriteString("[out:json][timeout:180];\n")
 
-	if r.OSMAreaID != 0 {
+	switch {
+	case r.HasPolygon():
+		// A drawn zone: scope precisely by the polygon (lat lon lat lon ...).
+		poly := polyString(r.Polygon)
+		b.WriteString("(\n")
+		for _, c := range cats {
+			fmt.Fprintf(&b, "  node[%q](poly:%q);\n", c, poly)
+			fmt.Fprintf(&b, "  way[%q](poly:%q);\n", c, poly)
+		}
+	case r.OSMAreaID != 0:
 		fmt.Fprintf(&b, "area(%d)->.a;\n", areaID(r.OSMAreaID))
 		b.WriteString("(\n")
 		for _, c := range cats {
 			fmt.Fprintf(&b, "  node[%q](area.a);\n", c)
 			fmt.Fprintf(&b, "  way[%q](area.a);\n", c)
 		}
-	} else {
+	default:
 		// Overpass bbox order is (south,west,north,east) = (minLat,minLon,maxLat,maxLon).
 		south, west, north, east := r.BBox[1], r.BBox[0], r.BBox[3], r.BBox[2]
 		b.WriteString("(\n")
@@ -52,6 +61,18 @@ func BuildQuery(r domain.Region, f domain.Filter) string {
 
 	b.WriteString(");\n")
 	b.WriteString("out center tags;")
+	return b.String()
+}
+
+// polyString renders a [lon,lat] ring as Overpass's "lat lon lat lon ..." form.
+func polyString(ring [][2]float64) string {
+	var b strings.Builder
+	for i, p := range ring {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		fmt.Fprintf(&b, "%g %g", p[1], p[0]) // lat lon
+	}
 	return b.String()
 }
 

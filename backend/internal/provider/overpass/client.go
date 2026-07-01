@@ -71,7 +71,7 @@ func (c *Client) Search(ctx context.Context, r domain.Region, f domain.Filter) (
 	companies := make([]domain.Company, 0, len(out.Elements))
 	for _, el := range out.Elements {
 		company := mapElement(el)
-		if f.Match(company) {
+		if f.Match(company) && r.Accept(company.Lat, company.Lon) {
 			companies = append(companies, company)
 		}
 	}

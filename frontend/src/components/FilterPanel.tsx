@@ -156,7 +156,7 @@ export function FilterPanel({
         whileHover={region && !isPending ? { scale: 1.02 } : undefined}
         whileTap={region && !isPending ? { scale: 0.97 } : undefined}
         disabled={!region || isPending}
-        onClick={onSearch}
+        onClick={() => onSearch()}
         className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:focus-visible:ring-offset-slate-900 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
       >
         {isPending ? (

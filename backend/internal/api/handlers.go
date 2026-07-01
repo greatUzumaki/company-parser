@@ -58,7 +58,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
-	if req.Region.OSMAreaID == 0 && req.Region.BBox == ([4]float64{}) {
+	if req.Region.OSMAreaID == 0 && req.Region.BBox == ([4]float64{}) && !req.Region.HasPolygon() {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "region required"})
 		return
 	}
@@ -79,7 +79,7 @@ func (s *Server) handleSearchStream(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
-	if req.Region.OSMAreaID == 0 && req.Region.BBox == ([4]float64{}) {
+	if req.Region.OSMAreaID == 0 && req.Region.BBox == ([4]float64{}) && !req.Region.HasPolygon() {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "region required"})
 		return
 	}

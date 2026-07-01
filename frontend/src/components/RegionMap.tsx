@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Map as MapLibreMap,
   NavigationControl,
@@ -11,12 +11,23 @@ import {
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { AnimatePresence, motion } from "framer-motion";
-import type { Feature, FeatureCollection, Geometry, Position } from "geojson";
+import {
+  TerraDraw,
+  TerraDrawCircleMode,
+  TerraDrawFreehandMode,
+  TerraDrawPolygonMode,
+  TerraDrawRectangleMode,
+} from "terra-draw";
+import { TerraDrawMapLibreGLAdapter } from "terra-draw-maplibre-gl-adapter";
+import type { Feature, FeatureCollection, Geometry, Polygon, Position } from "geojson";
 import countriesData from "@/data/countries.json";
 import { useSearch } from "@/store/useSearch";
 import { useHover } from "@/store/useHover";
 import { CONTACT_CHIPS, contactHref } from "@/lib/contacts";
+import { useT } from "@/lib/i18n";
 import type { Company, Region } from "@/lib/types";
+
+type DrawMode = "circle" | "rectangle" | "polygon" | "freehand";
 
 /** Convert companies to a GeoJSON point collection for the markers layer.
  *  `key` doubles as the feature id (via promoteId) so the results list can
@@ -110,7 +121,10 @@ export function RegionMap({
   const hoveredRef = useRef<string | number | null>(null);
   const selectedRef = useRef<string | number | null>(null);
   const readyRef = useRef(false);
+  const drawRef = useRef<TerraDraw | null>(null);
+  const [drawMode, setDrawMode] = useState<DrawMode | null>(null);
 
+  const t = useT();
   const setRegion = useSearch((s) => s.setRegion);
   const region = useSearch((s) => s.region);
 
@@ -363,13 +377,70 @@ export function RegionMap({
           { padding: 48, maxZoom: 6, duration: 700 },
         );
       });
+
+      // Drawing tools: circle / rectangle / polygon / freehand → search zone.
+      const draw = new TerraDraw({
+        adapter: new TerraDrawMapLibreGLAdapter({ map }),
+        modes: [
+          new TerraDrawCircleMode(),
+          new TerraDrawRectangleMode(),
+          new TerraDrawPolygonMode(),
+          new TerraDrawFreehandMode(),
+        ],
+      });
+      draw.start();
+      draw.setMode("static");
+      draw.on("finish", (id) => {
+        const feature = draw.getSnapshot().find((f) => f.id === id);
+        if (!feature || feature.geometry.type !== "Polygon") return;
+        const ring = (feature.geometry as Polygon).coordinates[0] as [number, number][];
+
+        let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
+        for (const [lon, lat] of ring) {
+          if (lon < minLon) minLon = lon;
+          if (lat < minLat) minLat = lat;
+          if (lon > maxLon) maxLon = lon;
+          if (lat > maxLat) maxLat = lat;
+        }
+
+        setRegionRef.current({
+          name: "Custom zone",
+          osmAreaId: 0,
+          bbox: [minLon, minLat, maxLon, maxLat],
+          polygon: ring,
+        });
+        draw.setMode("static");
+        setDrawMode(null);
+        map.fitBounds([[minLon, minLat], [maxLon, maxLat]], {
+          padding: 60,
+          maxZoom: 15,
+          duration: 600,
+        });
+      });
+      drawRef.current = draw;
     });
 
     return () => {
+      drawRef.current?.stop();
+      drawRef.current = null;
       map.remove();
       mapRef.current = null;
     };
   }, []);
+
+  const startDraw = (mode: DrawMode) => {
+    const draw = drawRef.current;
+    if (!draw) return;
+    draw.clear();
+    draw.setMode(mode);
+    setDrawMode(mode);
+  };
+
+  const clearDraw = () => {
+    drawRef.current?.clear();
+    drawRef.current?.setMode("static");
+    setDrawMode(null);
+  };
 
   const wrapperClass = fullScreen
     ? "absolute inset-0"
@@ -397,6 +468,58 @@ export function RegionMap({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {fullScreen && (
+        <div className="absolute bottom-9 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-2xl bg-white/90 p-1 shadow-lg ring-1 ring-slate-200/80 backdrop-blur dark:bg-slate-900/90 dark:ring-slate-700/80">
+          <DrawTool active={drawMode === "circle"} onClick={() => startDraw("circle")} title={t("draw.circle")}>
+            <circle cx="12" cy="12" r="7" />
+          </DrawTool>
+          <DrawTool active={drawMode === "rectangle"} onClick={() => startDraw("rectangle")} title={t("draw.rectangle")}>
+            <rect x="5" y="6" width="14" height="12" rx="1" />
+          </DrawTool>
+          <DrawTool active={drawMode === "polygon"} onClick={() => startDraw("polygon")} title={t("draw.polygon")}>
+            <path d="M12 4l7 5-2.5 8h-9L5 9z" />
+          </DrawTool>
+          <DrawTool active={drawMode === "freehand"} onClick={() => startDraw("freehand")} title={t("draw.freehand")}>
+            <path d="M4 15c3-6 6 3 9-1s4-7 7-5" strokeLinecap="round" />
+          </DrawTool>
+          <span className="mx-0.5 h-5 w-px bg-slate-200 dark:bg-slate-700" />
+          <DrawTool active={false} onClick={clearDraw} title={t("draw.clear")}>
+            <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+          </DrawTool>
+        </div>
+      )}
     </div>
+  );
+}
+
+function DrawTool({
+  active,
+  onClick,
+  title,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      aria-pressed={active}
+      className={`flex h-9 w-9 items-center justify-center rounded-xl transition-colors ${
+        active
+          ? "bg-emerald-500 text-white"
+          : "text-slate-600 hover:bg-slate-100 hover:text-emerald-600 dark:text-slate-300 dark:hover:bg-slate-800"
+      }`}
+    >
+      <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth={1.8}>
+        {children}
+      </svg>
+    </button>
   );
 }

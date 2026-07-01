@@ -97,6 +97,12 @@ const en: Dict = {
 
   "region.unknown": "Unknown region",
 
+  "draw.circle": "Draw a circle",
+  "draw.rectangle": "Draw a rectangle",
+  "draw.polygon": "Draw a polygon",
+  "draw.freehand": "Draw freehand",
+  "draw.clear": "Clear the drawn zone",
+
   "campaign.button": "Email campaign",
   "campaign.sendAll": "Email all filtered with an address ({count})",
   "campaign.title": "Email campaign",
@@ -180,6 +186,12 @@ const ru: Dict = {
   "hfilter.categories": "{n} категорий",
 
   "region.unknown": "Неизвестный регион",
+
+  "draw.circle": "Нарисовать круг",
+  "draw.rectangle": "Нарисовать прямоугольник",
+  "draw.polygon": "Нарисовать полигон",
+  "draw.freehand": "Свободное рисование",
+  "draw.clear": "Очистить зону",
 
   "campaign.button": "Email рассылка",
   "campaign.sendAll": "Разослать всем с почтой ({count})",

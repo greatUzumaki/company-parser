@@ -48,6 +48,19 @@ func TestBuildQuery(t *testing.T) {
 		}
 	})
 
+	t.Run("polygon scopes with poly filter (lat lon order)", func(t *testing.T) {
+		q := BuildQuery(
+			domain.Region{Polygon: [][2]float64{{7.4, 43.7}, {7.44, 43.7}, {7.44, 43.75}}},
+			domain.Filter{Categories: []string{"shop"}},
+		)
+		if !strings.Contains(q, `node["shop"](poly:"43.7 7.4 43.7 7.44 43.75 7.44")`) {
+			t.Errorf("missing poly clause, got:\n%s", q)
+		}
+		if strings.Contains(q, "area(") {
+			t.Errorf("polygon should not use area scoping, got:\n%s", q)
+		}
+	})
+
 	t.Run("no area id falls back to bbox scoping", func(t *testing.T) {
 		// BBox is [minLon, minLat, maxLon, maxLat]; Overpass wants (S,W,N,E).
 		q := BuildQuery(
