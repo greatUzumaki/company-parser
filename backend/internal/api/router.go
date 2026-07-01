@@ -18,6 +18,8 @@ func (s *Server) Routes(allowedOrigin string) http.Handler {
 	mux.HandleFunc("GET /api/v1/searches/{id}/export", s.handleExport)
 	mux.HandleFunc("GET /api/v1/regions", s.handleRegions)
 	mux.HandleFunc("GET /api/v1/categories", s.handleCategories)
+	mux.HandleFunc("GET /api/v1/campaign/status", s.handleCampaignStatus)
+	mux.HandleFunc("POST /api/v1/campaign/send", s.handleCampaignSend)
 
 	return cors(allowedOrigin)(mux)
 }

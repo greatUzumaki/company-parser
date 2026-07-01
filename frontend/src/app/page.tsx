@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { RegionMap } from "@/components/RegionMap";
 import { FilterPanel } from "@/components/FilterPanel";
@@ -9,7 +9,7 @@ import { ResultsTable } from "@/components/ResultsTable";
 import { ExportBar } from "@/components/ExportBar";
 import { HistoryList } from "@/components/HistoryList";
 import { SearchProgress, type SourceProgress } from "@/components/SearchProgress";
-import { searchCompaniesStream } from "@/lib/api";
+import { getCampaignStatus, searchCompaniesStream } from "@/lib/api";
 import type { Company, StreamEvent } from "@/lib/types";
 import { useSearch } from "@/store/useSearch";
 import { useLangInit, useLangStore, useT, type Lang } from "@/lib/i18n";
@@ -27,6 +27,12 @@ export default function Home() {
   const [rightOpen, setRightOpen] = useState(false);
   const [leftTab, setLeftTab] = useState<LeftTab>("filters");
 
+  const campaignStatus = useQuery({
+    queryKey: ["campaign-status"],
+    queryFn: getCampaignStatus,
+    staleTime: Infinity,
+  });
+
   // Streaming search state.
   const [companies, setCompanies] = useState<Company[]>([]);
   const [searchId, setSearchId] = useState<number | null>(null);
@@ -35,7 +41,7 @@ export default function Home() {
   const [sources, setSources] = useState<SourceProgress[]>([]);
   const abortRef = useRef<AbortController | null>(null);
 
-  const runSearch = () => {
+  const runSearch = (force = false) => {
     if (!region) return;
     abortRef.current?.abort();
     const ac = new AbortController();
@@ -50,12 +56,27 @@ export default function Home() {
 
     const acc: Company[] = [];
     const seen = new Set<string>();
+    const appendCompanies = (list?: Company[]) => {
+      if (!list?.length) return;
+      for (const c of list) {
+        const k = `${c.osmType}/${c.osmId}`;
+        if (!seen.has(k)) {
+          seen.add(k);
+          acc.push(c);
+        }
+      }
+      setCompanies([...acc]);
+    };
 
     searchCompaniesStream(
       region,
       filters,
       (e: StreamEvent) => {
         switch (e.type) {
+          case "cached":
+            // Cached results render instantly; a refresh may follow.
+            appendCompanies(e.companies);
+            break;
           case "source_start":
             setSources((prev) =>
               prev.some((s) => s.name === e.source)
@@ -64,16 +85,7 @@ export default function Home() {
             );
             break;
           case "companies":
-            if (e.companies?.length) {
-              for (const c of e.companies) {
-                const k = `${c.osmType}/${c.osmId}`;
-                if (!seen.has(k)) {
-                  seen.add(k);
-                  acc.push(c);
-                }
-              }
-              setCompanies([...acc]);
-            }
+            appendCompanies(e.companies);
             setSources((prev) =>
               prev.map((s) => (s.name === e.source ? { ...s, count: e.count ?? s.count } : s)),
             );
@@ -99,6 +111,7 @@ export default function Home() {
         }
       },
       ac.signal,
+      force,
     ).catch((err) => {
       if (ac.signal.aborted) return;
       setError(err instanceof Error ? err.message : "Search failed");
@@ -244,6 +257,20 @@ export default function Home() {
                 )}
               </div>
               <div className="flex items-center gap-2">
+                {hasSearch && region && (
+                  <button
+                    type="button"
+                    onClick={() => runSearch(true)}
+                    disabled={streaming}
+                    aria-label={t("refresh")}
+                    title={t("refresh")}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-emerald-600 disabled:opacity-40 dark:hover:bg-slate-800"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5M20 20v-5h-5M20 9a8 8 0 00-14.9-2M4 15a8 8 0 0014.9 2" />
+                    </svg>
+                  </button>
+                )}
                 <ExportBar searchId={searchId} />
                 <button
                   type="button"
@@ -259,7 +286,11 @@ export default function Home() {
             <SearchProgress sources={sources} streaming={streaming} />
 
             <div className="scroll-slim min-h-0 flex-1 overflow-y-auto p-3">
-              <ResultsTable data={results} isLoading={streaming && companies.length === 0} />
+              <ResultsTable
+                data={results}
+                isLoading={streaming && companies.length === 0}
+                campaignEnabled={campaignStatus.data?.enabled === true}
+              />
             </div>
           </motion.aside>
         )}
@@ -269,6 +300,7 @@ export default function Home() {
       <div className="pointer-events-none absolute bottom-2 left-1/2 z-10 -translate-x-1/2 rounded-full bg-white/70 px-3 py-1 text-[11px] text-slate-500 backdrop-blur dark:bg-slate-900/70 dark:text-slate-400">
         Data © OpenStreetMap contributors (ODbL)
       </div>
+
     </div>
   );
 }

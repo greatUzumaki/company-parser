@@ -27,17 +27,22 @@ type NamedProvider struct {
 
 // Event is one message in a streaming search.
 type Event struct {
-	Type      string           `json:"type"` // source_start | source_done | companies | done | error
+	Type      string           `json:"type"` // cached | source_start | source_done | companies | done | error
 	Source    string           `json:"source,omitempty"`
 	Companies []domain.Company `json:"companies,omitempty"`
 	Count     int              `json:"count,omitempty"`    // running total after dedup
 	Done      int              `json:"done,omitempty"`     // providers finished
 	Total     int              `json:"total,omitempty"`    // providers total
 	SearchID  int64            `json:"searchId,omitempty"` // set on "done"
+	Cached    bool             `json:"cached,omitempty"`   // served from cache without refresh
 	Message   string           `json:"message,omitempty"`
 }
 
 const cacheTTL = 24 * time.Hour
+
+// refreshAfter is how long a cached result is served as-is before a background
+// refresh re-queries the providers for new/updated companies.
+const refreshAfter = 30 * time.Minute
 
 // Service runs searches across its providers.
 type Service struct {
@@ -75,10 +80,11 @@ func (s *Service) fanOut(ctx context.Context, r domain.Region, f domain.Filter) 
 func (s *Service) Search(ctx context.Context, r domain.Region, f domain.Filter) (int64, []domain.Company, error) {
 	key := cache.Key(r, f)
 
-	companies, hit, err := s.cache.Get(ctx, key)
+	entry, hit, err := s.cache.Get(ctx, key)
 	if err != nil {
 		return 0, nil, fmt.Errorf("service: cache get: %w", err)
 	}
+	companies := entry.Companies
 	if !hit {
 		acc := newAccumulator()
 		ch := s.fanOut(ctx, r, f)
@@ -111,20 +117,54 @@ func (s *Service) Search(ctx context.Context, r domain.Region, f domain.Filter) 
 	return searchID, companies, nil
 }
 
-// SearchStream runs all providers concurrently and emits events as each source
-// completes: per-source start/done progress plus incremental batches of newly
-// found companies (already deduped against earlier sources). It persists the
-// merged set and emits a final "done" event with the search id.
-func (s *Service) SearchStream(ctx context.Context, r domain.Region, f domain.Filter, emit func(Event) error) error {
+// SearchStream serves results with stale-while-revalidate semantics:
+//   - a cached result is emitted immediately (type "cached") so the user sees
+//     data without waiting on the providers;
+//   - if that cache is still fresh (< refreshAfter) and force is false, it is
+//     returned as-is with no provider calls — no re-parsing every time;
+//   - otherwise the providers run "in the background" of the same stream,
+//     emitting only companies that are new/updated versus the cache, then the
+//     cache and DB are refreshed.
+//
+// It emits per-source progress and a final "done" event with the search id.
+func (s *Service) SearchStream(ctx context.Context, r domain.Region, f domain.Filter, force bool, emit func(Event) error) error {
+	key := cache.Key(r, f)
+	acc := newAccumulator()
+
+	cachedFresh := false
+	if !force {
+		entry, hit, err := s.cache.Get(ctx, key)
+		if err != nil {
+			return fmt.Errorf("service: cache get: %w", err)
+		}
+		if hit {
+			acc.add(entry.Companies)
+			if err := emit(Event{Type: "cached", Companies: entry.Companies, Count: len(acc.all())}); err != nil {
+				return err
+			}
+			cachedFresh = time.Since(entry.FetchedAt) < refreshAfter
+		}
+	}
+
+	// Fresh cache: no provider calls. Persist for export and finish.
+	if cachedFresh {
+		searchID, err := s.persist(ctx, r, f, acc.all())
+		if err != nil {
+			_ = emit(Event{Type: "error", Message: "persist failed"})
+			return err
+		}
+		return emit(Event{Type: "done", SearchID: searchID, Count: len(acc.all()), Cached: true})
+	}
+
+	// Refresh from providers (cache miss, stale cache, or forced).
 	total := len(s.providers)
 	if err := emitAll(emit, sourceStarts(s.providers, total)); err != nil {
 		return err
 	}
 
-	acc := newAccumulator()
 	ch := s.fanOut(ctx, r, f)
 	var firstErr error
-	done := 0
+	done, succeeded := 0, 0
 	for range s.providers {
 		res := <-ch
 		done++
@@ -137,7 +177,8 @@ func (s *Service) SearchStream(ctx context.Context, r domain.Region, f domain.Fi
 			}
 			continue
 		}
-		fresh := acc.add(res.companies)
+		succeeded++
+		fresh := acc.add(res.companies) // only new/updated versus cache + earlier sources
 		if err := emit(Event{Type: "companies", Source: res.name, Companies: fresh, Count: len(acc.all())}); err != nil {
 			return err
 		}
@@ -152,7 +193,11 @@ func (s *Service) SearchStream(ctx context.Context, r domain.Region, f domain.Fi
 		return fmt.Errorf("service: all providers failed: %w", firstErr)
 	}
 
-	_ = s.cache.Set(ctx, cache.Key(r, f), companies, cacheTTL)
+	// Only refresh the cache timestamp when a provider actually answered, so a
+	// failed refresh keeps the old entry stale and retries next time.
+	if succeeded > 0 {
+		_ = s.cache.Set(ctx, key, companies, cacheTTL)
+	}
 
 	searchID, err := s.persist(ctx, r, f, companies)
 	if err != nil {

@@ -13,7 +13,9 @@ import (
 
 	"github.com/parse-companies/backend/internal/api"
 	"github.com/parse-companies/backend/internal/cache"
+	"github.com/parse-companies/backend/internal/campaign"
 	"github.com/parse-companies/backend/internal/config"
+	"github.com/parse-companies/backend/internal/mailer"
 	"github.com/parse-companies/backend/internal/provider/nominatim"
 	"github.com/parse-companies/backend/internal/provider/overpass"
 	"github.com/parse-companies/backend/internal/provider/wikidata"
@@ -56,7 +58,26 @@ func run(logger *slog.Logger) error {
 	geocoder := nominatim.New(&http.Client{Timeout: 15 * time.Second}, cfg.NominatimURL)
 	svc := service.New(providers, st, rc)
 
-	srv := api.NewServer(svc, st, geocoder, logger)
+	smtp, err := mailer.NewSMTP(mailer.Config{
+		Host:     cfg.SMTPHost,
+		Port:     cfg.SMTPPort,
+		Username: cfg.SMTPUsername,
+		Password: cfg.SMTPPassword,
+	})
+	if err != nil {
+		return err
+	}
+	// smtp is nil when SMTP is unconfigured; campaign.Enabled() then reports false.
+	var m mailer.Mailer
+	if smtp != nil {
+		m = smtp
+	}
+	camp := campaign.New(m, cfg.SMTPFrom, cfg.CampaignDelayMS, cfg.CampaignMax)
+	if camp.Enabled() {
+		logger.Info("email campaigns enabled", "from", cfg.SMTPFrom)
+	}
+
+	srv := api.NewServer(svc, st, geocoder, camp, logger)
 	handler := srv.Routes(cfg.AllowedOrigin)
 
 	httpSrv := &http.Server{

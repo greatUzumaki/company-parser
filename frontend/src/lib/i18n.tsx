@@ -69,8 +69,14 @@ const en: Dict = {
   "col.phone": "Phone",
   "col.city": "City",
   "col.socials": "Socials",
+  "col.contacts": "Contacts",
+  "filter.email": "Has email",
+  "filter.phone": "Has phone",
+  "filter.website": "Has website",
+  "filter.socials": "Has socials",
 
   "results.title": "Results",
+  refresh: "Refresh (re-parse)",
   "results.emptyTitle": "No results yet",
   "results.emptyDesc":
     "Pick a region on the map, choose your filters, and run a search to see companies here.",
@@ -90,6 +96,26 @@ const en: Dict = {
   "hfilter.categories": "{n} categories",
 
   "region.unknown": "Unknown region",
+
+  "campaign.button": "Email campaign",
+  "campaign.sendAll": "Email all filtered with an address ({count})",
+  "campaign.title": "Email campaign",
+  "campaign.warning":
+    "Sends from your own SMTP. Only email recipients who have consented — unsolicited bulk email is regulated (CAN-SPAM / GDPR) and can get your domain blacklisted.",
+  "campaign.recipients": "{count} recipients with email",
+  "campaign.subject": "Subject",
+  "campaign.body": "Message",
+  "campaign.bodyHint": "Use {{name}} to insert the company name.",
+  "campaign.consent": "I have consent to email these recipients and comply with anti-spam law.",
+  "campaign.dryRun": "Dry run (preview, don't send)",
+  "campaign.send": "Send campaign",
+  "campaign.sendDry": "Preview (dry run)",
+  "campaign.sending": "Sending…",
+  "campaign.progress": "{sent} sent · {failed} failed / {total}",
+  "campaign.doneSent": "Done — {sent} sent, {failed} failed.",
+  "campaign.doneDry": "Dry run complete — would send to {sent}.",
+  "campaign.close": "Close",
+  "campaign.disabled": "Email sending is not configured on the server.",
 };
 
 const ru: Dict = {
@@ -127,8 +153,14 @@ const ru: Dict = {
   "col.phone": "Телефон",
   "col.city": "Город",
   "col.socials": "Соцсети",
+  "col.contacts": "Контакты",
+  "filter.email": "Есть почта",
+  "filter.phone": "Есть телефон",
+  "filter.website": "Есть сайт",
+  "filter.socials": "Есть соцсети",
 
   "results.title": "Результаты",
+  refresh: "Обновить (перепарсить)",
   "results.emptyTitle": "Пока нет результатов",
   "results.emptyDesc":
     "Выберите регион на карте, задайте фильтры и запустите поиск, чтобы увидеть компании здесь.",
@@ -148,6 +180,26 @@ const ru: Dict = {
   "hfilter.categories": "{n} категорий",
 
   "region.unknown": "Неизвестный регион",
+
+  "campaign.button": "Email рассылка",
+  "campaign.sendAll": "Разослать всем с почтой ({count})",
+  "campaign.title": "Email рассылка",
+  "campaign.warning":
+    "Отправка с вашего SMTP. Пишите только тем, кто дал согласие — массовая рассылка без согласия регулируется законом (ФЗ «О рекламе», GDPR) и грозит блокировкой домена.",
+  "campaign.recipients": "{count} получателей с почтой",
+  "campaign.subject": "Тема",
+  "campaign.body": "Сообщение",
+  "campaign.bodyHint": "Вставьте {{name}} для имени компании.",
+  "campaign.consent": "У меня есть согласие получателей, соблюдаю закон о рекламе/спаме.",
+  "campaign.dryRun": "Тест (превью, без отправки)",
+  "campaign.send": "Отправить рассылку",
+  "campaign.sendDry": "Превью (тест)",
+  "campaign.sending": "Отправка…",
+  "campaign.progress": "{sent} отправлено · {failed} ошибок / {total}",
+  "campaign.doneSent": "Готово — отправлено {sent}, ошибок {failed}.",
+  "campaign.doneDry": "Тест завершён — отправили бы {sent}.",
+  "campaign.close": "Закрыть",
+  "campaign.disabled": "Отправка email не настроена на сервере.",
 };
 
 const messages: Record<Lang, Dict> = { en, ru };

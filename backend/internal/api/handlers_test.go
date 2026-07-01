@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/parse-companies/backend/internal/campaign"
 	"github.com/parse-companies/backend/internal/domain"
 	"github.com/parse-companies/backend/internal/service"
 	"github.com/parse-companies/backend/internal/store"
@@ -27,7 +28,7 @@ func (f fakeSearcher) Search(context.Context, domain.Region, domain.Filter) (int
 	return f.id, f.companies, nil
 }
 
-func (f fakeSearcher) SearchStream(_ context.Context, _ domain.Region, _ domain.Filter, emit func(service.Event) error) error {
+func (f fakeSearcher) SearchStream(_ context.Context, _ domain.Region, _ domain.Filter, _ bool, emit func(service.Event) error) error {
 	if err := emit(service.Event{Type: "source_start", Source: "Test", Total: 1}); err != nil {
 		return err
 	}
@@ -58,11 +59,21 @@ func (fakeRegions) Search(context.Context, string) ([]domain.Region, error) {
 	return []domain.Region{{Name: "Bavaria", OSMAreaID: 3600002145}}, nil
 }
 
+type fakeCampaign struct{ enabled bool }
+
+func (f fakeCampaign) Enabled() bool { return f.enabled }
+func (f fakeCampaign) Send(_ context.Context, _, _ string, recipients []campaign.Recipient, dryRun bool, emit func(campaign.Event) error) error {
+	if err := emit(campaign.Event{Type: "start", Total: len(recipients), DryRun: dryRun}); err != nil {
+		return err
+	}
+	return emit(campaign.Event{Type: "done", Sent: len(recipients), DryRun: dryRun})
+}
+
 func testServer(repo Repo) http.Handler {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	s := NewServer(
 		fakeSearcher{id: 42, companies: []domain.Company{{OSMID: "1", Name: "A"}}},
-		repo, fakeRegions{}, logger,
+		repo, fakeRegions{}, fakeCampaign{enabled: true}, logger,
 	)
 	return s.Routes("*")
 }
@@ -170,6 +181,44 @@ func TestCategoriesAndRegions(t *testing.T) {
 	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/regions?q=bav", nil))
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "Bavaria") {
 		t.Errorf("regions: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCampaignStatus(t *testing.T) {
+	srv := testServer(fakeRepo{})
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/campaign/status", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"enabled":true`) {
+		t.Errorf("status: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCampaignRequiresConfirm(t *testing.T) {
+	srv := testServer(fakeRepo{})
+	body := `{"recipients":[{"email":"a@b.com","name":"A"}],"subject":"hi","body":"hello","confirm":false}`
+	req := httptest.NewRequest("POST", "/api/v1/campaign/send", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != 400 {
+		t.Errorf("without confirm status = %d, want 400", rec.Code)
+	}
+}
+
+func TestCampaignSendStreams(t *testing.T) {
+	srv := testServer(fakeRepo{})
+	body := `{"recipients":[{"email":"a@b.com","name":"A"}],"subject":"hi","body":"hello {{name}}","dryRun":true,"confirm":true}`
+	req := httptest.NewRequest("POST", "/api/v1/campaign/send", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/x-ndjson" {
+		t.Errorf("content-type = %q", ct)
+	}
+	if !strings.Contains(rec.Body.String(), `"type":"done"`) {
+		t.Errorf("missing done event: %s", rec.Body.String())
 	}
 }
 

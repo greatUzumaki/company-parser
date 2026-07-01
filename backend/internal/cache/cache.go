@@ -15,9 +15,16 @@ import (
 	"github.com/parse-companies/backend/internal/domain"
 )
 
+// Entry is a cached search result plus when it was fetched, so callers can
+// decide whether it is fresh enough or should be refreshed.
+type Entry struct {
+	Companies []domain.Company `json:"companies"`
+	FetchedAt time.Time        `json:"fetchedAt"`
+}
+
 // Cache stores and retrieves company lists by a region+filter key.
 type Cache interface {
-	Get(ctx context.Context, key string) ([]domain.Company, bool, error)
+	Get(ctx context.Context, key string) (Entry, bool, error)
 	Set(ctx context.Context, key string, companies []domain.Company, ttl time.Duration) error
 }
 
@@ -33,12 +40,12 @@ func Key(r domain.Region, f domain.Filter) string {
 }
 
 // encode/decode keep the wire format in one place.
-func encode(companies []domain.Company) ([]byte, error) { return json.Marshal(companies) }
+func encode(e Entry) ([]byte, error) { return json.Marshal(e) }
 
-func decode(b []byte) ([]domain.Company, error) {
-	var cs []domain.Company
-	if err := json.Unmarshal(b, &cs); err != nil {
-		return nil, err
+func decode(b []byte) (Entry, error) {
+	var e Entry
+	if err := json.Unmarshal(b, &e); err != nil {
+		return Entry{}, err
 	}
-	return cs, nil
+	return e, nil
 }

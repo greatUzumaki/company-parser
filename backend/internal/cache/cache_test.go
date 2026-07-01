@@ -49,7 +49,10 @@ func TestRedisRoundTrip(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("expected hit, got ok=%v err=%v", ok, err)
 	}
-	if len(got) != 1 || got[0].Name != "A" || got[0].Website != "https://a.test" {
+	if len(got.Companies) != 1 || got.Companies[0].Name != "A" || got.Companies[0].Website != "https://a.test" {
 		t.Errorf("round-trip mismatch: %+v", got)
+	}
+	if got.FetchedAt.IsZero() {
+		t.Error("FetchedAt not stamped on Set")
 	}
 }

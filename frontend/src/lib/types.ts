@@ -70,15 +70,28 @@ export interface Category {
   label: string;
 }
 
+/** One event in a streaming email campaign (NDJSON from /campaign/send). */
+export interface CampaignEvent {
+  type: "start" | "sent" | "failed" | "done" | "error";
+  email?: string;
+  name?: string;
+  sent?: number;
+  failed?: number;
+  total?: number;
+  dryRun?: boolean;
+  message?: string;
+}
+
 /** One event in a streaming search (NDJSON line from /search/stream). */
 export interface StreamEvent {
-  type: "source_start" | "source_done" | "companies" | "done" | "error";
+  type: "cached" | "source_start" | "source_done" | "companies" | "done" | "error";
   source?: string;
   companies?: Company[];
   count?: number; // running total after dedup
   done?: number; // providers finished
   total?: number; // providers total
   searchId?: number; // set on "done"
+  cached?: boolean; // served from cache without a refresh
   message?: string;
 }
 

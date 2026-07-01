@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/parse-companies/backend/internal/cache"
 	"github.com/parse-companies/backend/internal/domain"
 )
 
@@ -39,16 +40,21 @@ func (r *fakeRepo) CreateSearch(_ context.Context, _ domain.Region, _ domain.Fil
 	return 99, nil
 }
 
-type fakeCache struct{ stored map[string][]domain.Company }
+type fakeCache struct{ stored map[string]cache.Entry }
 
-func newFakeCache() *fakeCache { return &fakeCache{stored: map[string][]domain.Company{}} }
-func (c *fakeCache) Get(_ context.Context, key string) ([]domain.Company, bool, error) {
+func newFakeCache() *fakeCache { return &fakeCache{stored: map[string]cache.Entry{}} }
+func (c *fakeCache) Get(_ context.Context, key string) (cache.Entry, bool, error) {
 	v, ok := c.stored[key]
 	return v, ok, nil
 }
 func (c *fakeCache) Set(_ context.Context, key string, v []domain.Company, _ time.Duration) error {
-	c.stored[key] = v
+	c.stored[key] = cache.Entry{Companies: v, FetchedAt: time.Now()}
 	return nil
+}
+
+// seed pre-populates the cache with a given age (for freshness tests).
+func (c *fakeCache) seed(key string, companies []domain.Company, age time.Duration) {
+	c.stored[key] = cache.Entry{Companies: companies, FetchedAt: time.Now().Add(-age)}
 }
 
 func providers(ps ...*fakeProvider) []NamedProvider {
@@ -132,7 +138,7 @@ func TestSearchStreamEmitsProgressAndDone(t *testing.T) {
 	svc := New(providers(a, b), &fakeRepo{}, newFakeCache())
 
 	var events []Event
-	err := svc.SearchStream(context.Background(), domain.Region{OSMAreaID: 1}, domain.Filter{}, func(e Event) error {
+	err := svc.SearchStream(context.Background(), domain.Region{OSMAreaID: 1}, domain.Filter{}, false, func(e Event) error {
 		events = append(events, e)
 		return nil
 	})
@@ -166,5 +172,101 @@ func TestSearchStreamEmitsProgressAndDone(t *testing.T) {
 	}
 	if searchID != 99 {
 		t.Errorf("final searchId = %d, want 99", searchID)
+	}
+}
+
+func collectStream(t *testing.T, svc *Service, r domain.Region, f domain.Filter, force bool) []Event {
+	t.Helper()
+	var events []Event
+	if err := svc.SearchStream(context.Background(), r, f, force, func(e Event) error {
+		events = append(events, e)
+		return nil
+	}); err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	return events
+}
+
+func hasType(events []Event, typ string) bool {
+	for _, e := range events {
+		if e.Type == typ {
+			return true
+		}
+	}
+	return false
+}
+
+func TestStreamFreshCacheSkipsProviders(t *testing.T) {
+	prov := &fakeProvider{companies: []domain.Company{{OSMID: "1", Name: "A"}}}
+	c := newFakeCache()
+	svc := New(providers(prov), &fakeRepo{}, c)
+	region := domain.Region{OSMAreaID: 5}
+	filter := domain.Filter{}
+	// Seed a FRESH cache entry (5 minutes old).
+	c.seed(cache.Key(region, filter), []domain.Company{{OSMType: "node", OSMID: "9", Name: "Cached"}}, 5*time.Minute)
+
+	events := collectStream(t, svc, region, filter, false)
+
+	if prov.calls != 0 {
+		t.Errorf("provider called %d times, want 0 (fresh cache)", prov.calls)
+	}
+	if !hasType(events, "cached") {
+		t.Error("expected a cached event")
+	}
+	var done Event
+	for _, e := range events {
+		if e.Type == "done" {
+			done = e
+		}
+	}
+	if !done.Cached || done.Count != 1 {
+		t.Errorf("done event = %+v, want cached with 1", done)
+	}
+}
+
+func TestStreamStaleCacheRefreshes(t *testing.T) {
+	prov := &fakeProvider{companies: []domain.Company{{OSMType: "node", OSMID: "new", Name: "New"}}}
+	c := newFakeCache()
+	svc := New(providers(prov), &fakeRepo{}, c)
+	region := domain.Region{OSMAreaID: 6}
+	filter := domain.Filter{}
+	// Seed a STALE cache entry (2 hours old > refreshAfter).
+	c.seed(cache.Key(region, filter), []domain.Company{{OSMType: "node", OSMID: "9", Name: "Cached"}}, 2*time.Hour)
+
+	events := collectStream(t, svc, region, filter, false)
+
+	if !hasType(events, "cached") {
+		t.Error("stale cache should still be served immediately (cached event)")
+	}
+	if prov.calls != 1 {
+		t.Errorf("provider called %d times, want 1 (stale -> refresh)", prov.calls)
+	}
+	// Final count merges cached (1) + newly found (1) = 2.
+	var done Event
+	for _, e := range events {
+		if e.Type == "done" {
+			done = e
+		}
+	}
+	if done.Count != 2 {
+		t.Errorf("final count = %d, want 2 (cached + new)", done.Count)
+	}
+}
+
+func TestStreamForceBypassesFreshCache(t *testing.T) {
+	prov := &fakeProvider{companies: []domain.Company{{OSMID: "1", Name: "A"}}}
+	c := newFakeCache()
+	svc := New(providers(prov), &fakeRepo{}, c)
+	region := domain.Region{OSMAreaID: 7}
+	filter := domain.Filter{}
+	c.seed(cache.Key(region, filter), []domain.Company{{OSMType: "node", OSMID: "9"}}, time.Minute)
+
+	events := collectStream(t, svc, region, filter, true)
+
+	if prov.calls != 1 {
+		t.Errorf("provider called %d times, want 1 (force bypasses cache)", prov.calls)
+	}
+	if hasType(events, "cached") {
+		t.Error("force should not emit a cached event")
 	}
 }

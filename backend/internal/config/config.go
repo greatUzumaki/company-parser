@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 )
 
 // Config holds all runtime settings. Every field maps to one env var so the
@@ -16,6 +17,16 @@ type Config struct {
 	NominatimURL  string
 	WikidataURL   string
 	AllowedOrigin string
+
+	// SMTP — user-provided; email campaigns are disabled when SMTPHost is empty.
+	SMTPHost     string
+	SMTPPort     int
+	SMTPUsername string
+	SMTPPassword string
+	SMTPFrom     string // e.g. "Acme <hello@acme.com>"
+	// CampaignDelayMS throttles sends; CampaignMax caps recipients per campaign.
+	CampaignDelayMS int
+	CampaignMax     int
 }
 
 // Load reads configuration from the environment, applying defaults for the
@@ -29,6 +40,14 @@ func Load() (Config, error) {
 		NominatimURL:  getenv("NOMINATIM_URL", "https://nominatim.openstreetmap.org"),
 		WikidataURL:   getenv("WIKIDATA_URL", "https://query.wikidata.org/sparql"),
 		AllowedOrigin: getenv("ALLOWED_ORIGIN", "http://localhost:3000"),
+
+		SMTPHost:        os.Getenv("SMTP_HOST"),
+		SMTPPort:        atoiDefault(os.Getenv("SMTP_PORT"), 587),
+		SMTPUsername:    os.Getenv("SMTP_USERNAME"),
+		SMTPPassword:    os.Getenv("SMTP_PASSWORD"),
+		SMTPFrom:        os.Getenv("SMTP_FROM"),
+		CampaignDelayMS: atoiDefault(os.Getenv("CAMPAIGN_DELAY_MS"), 1000),
+		CampaignMax:     atoiDefault(os.Getenv("CAMPAIGN_MAX"), 500),
 	}
 	if c.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("config: DATABASE_URL is required")
@@ -44,4 +63,11 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func atoiDefault(s string, def int) int {
+	if v, err := strconv.Atoi(s); err == nil && v > 0 {
+		return v
+	}
+	return def
 }

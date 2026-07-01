@@ -1,4 +1,5 @@
 import type {
+  CampaignEvent,
   Category,
   ExportFormat,
   Filters,
@@ -34,31 +35,15 @@ export async function searchCompanies(
   return parse<SearchResponse>(res);
 }
 
-/** Run a streaming search: newly found companies and per-source progress arrive
- *  incrementally as NDJSON. `onEvent` fires for each event; pass an AbortSignal
- *  to cancel. Resolves when the stream ends. */
-export async function searchCompaniesStream(
-  region: Region,
-  filters: Filters,
-  onEvent: (event: StreamEvent) => void,
-  signal?: AbortSignal,
-): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/v1/search/stream`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ region, filters }),
-    signal,
-  });
+/** Read an NDJSON response body, invoking onEvent for each JSON line. */
+async function readNDJSON<T>(res: Response, onEvent: (event: T) => void): Promise<void> {
   if (!res.ok || !res.body) {
     const text = await res.text().catch(() => "");
     throw new Error(text || `Stream failed with status ${res.status}`);
   }
-
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-
-  // NDJSON: one JSON object per line, flushed as the server finds results.
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -67,11 +52,59 @@ export async function searchCompaniesStream(
     while ((nl = buffer.indexOf("\n")) >= 0) {
       const line = buffer.slice(0, nl).trim();
       buffer = buffer.slice(nl + 1);
-      if (line) onEvent(JSON.parse(line) as StreamEvent);
+      if (line) onEvent(JSON.parse(line) as T);
     }
   }
   const tail = buffer.trim();
-  if (tail) onEvent(JSON.parse(tail) as StreamEvent);
+  if (tail) onEvent(JSON.parse(tail) as T);
+}
+
+/** Run a streaming search: newly found companies and per-source progress arrive
+ *  incrementally as NDJSON. `onEvent` fires for each event; pass an AbortSignal
+ *  to cancel. Resolves when the stream ends. */
+export async function searchCompaniesStream(
+  region: Region,
+  filters: Filters,
+  onEvent: (event: StreamEvent) => void,
+  signal?: AbortSignal,
+  force = false,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/v1/search/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ region, filters, force }),
+    signal,
+  });
+  await readNDJSON<StreamEvent>(res, onEvent);
+}
+
+/** Whether email campaigns are configured (server has SMTP set up). */
+export async function getCampaignStatus(): Promise<{ enabled: boolean }> {
+  const res = await fetch(`${API_BASE}/api/v1/campaign/status`);
+  return parse<{ enabled: boolean }>(res);
+}
+
+/** Send an email campaign to the emails collected in a search, streaming
+ *  per-recipient progress. `confirm` is the required consent acknowledgement;
+ *  `dryRun` previews without sending. */
+export async function sendCampaign(
+  params: {
+    subject: string;
+    body: string;
+    recipients: { email: string; name: string }[];
+    dryRun: boolean;
+    confirm: boolean;
+  },
+  onEvent: (event: CampaignEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/v1/campaign/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+    signal,
+  });
+  await readNDJSON<CampaignEvent>(res, onEvent);
 }
 
 /** List past searches, most recent first. */

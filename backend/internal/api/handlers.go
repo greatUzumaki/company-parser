@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/parse-companies/backend/internal/campaign"
 	"github.com/parse-companies/backend/internal/domain"
 	"github.com/parse-companies/backend/internal/export"
 	"github.com/parse-companies/backend/internal/service"
@@ -17,7 +18,7 @@ import (
 // Implemented by *service.Service.
 type Searcher interface {
 	Search(ctx context.Context, r domain.Region, f domain.Filter) (int64, []domain.Company, error)
-	SearchStream(ctx context.Context, r domain.Region, f domain.Filter, emit func(service.Event) error) error
+	SearchStream(ctx context.Context, r domain.Region, f domain.Filter, force bool, emit func(service.Event) error) error
 }
 
 // Repo reads search history. Implemented by *store.Store.
@@ -31,17 +32,24 @@ type RegionFinder interface {
 	Search(ctx context.Context, query string) ([]domain.Region, error)
 }
 
+// CampaignSender sends an email campaign. Implemented by *campaign.Service.
+type CampaignSender interface {
+	Enabled() bool
+	Send(ctx context.Context, subject, body string, recipients []campaign.Recipient, dryRun bool, emit func(campaign.Event) error) error
+}
+
 // Server holds handler dependencies.
 type Server struct {
-	search  Searcher
-	repo    Repo
-	regions RegionFinder
-	logger  *slog.Logger
+	search   Searcher
+	repo     Repo
+	regions  RegionFinder
+	campaign CampaignSender
+	logger   *slog.Logger
 }
 
 // NewServer builds the API server.
-func NewServer(s Searcher, repo Repo, regions RegionFinder, logger *slog.Logger) *Server {
-	return &Server{search: s, repo: repo, regions: regions, logger: logger}
+func NewServer(s Searcher, repo Repo, regions RegionFinder, camp CampaignSender, logger *slog.Logger) *Server {
+	return &Server{search: s, repo: repo, regions: regions, campaign: camp, logger: logger}
 }
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
@@ -93,7 +101,7 @@ func (s *Server) handleSearchStream(w http.ResponseWriter, r *http.Request) {
 		return nil
 	}
 
-	if err := s.search.SearchStream(r.Context(), req.Region, req.Filters, emit); err != nil {
+	if err := s.search.SearchStream(r.Context(), req.Region, req.Filters, req.Force, emit); err != nil {
 		// Headers/body already streaming; the error event was emitted by the
 		// service. Just log here.
 		s.logger.Error("search stream", "err", err)
@@ -166,6 +174,55 @@ func (s *Server) handleRegions(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCategories(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, categories)
+}
+
+// handleCampaignStatus tells the UI whether email campaigns are available.
+func (s *Server) handleCampaignStatus(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]bool{"enabled": s.campaign.Enabled()})
+}
+
+// handleCampaignSend streams the progress of an email campaign as NDJSON.
+// The caller MUST set confirm=true (consent acknowledgement); dryRun previews
+// without sending.
+func (s *Server) handleCampaignSend(w http.ResponseWriter, r *http.Request) {
+	var req campaignRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if !s.campaign.Enabled() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "email sending is not configured"})
+		return
+	}
+	if !req.Confirm {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "consent confirmation required"})
+		return
+	}
+	if len(req.Recipients) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no recipients"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	flusher, _ := w.(http.Flusher)
+	enc := json.NewEncoder(w)
+	emit := func(e campaign.Event) error {
+		if err := enc.Encode(e); err != nil {
+			return err
+		}
+		if flusher != nil {
+			flusher.Flush()
+		}
+		return nil
+	}
+
+	if err := s.campaign.Send(r.Context(), req.Subject, req.Body, req.Recipients, req.DryRun, emit); err != nil {
+		s.logger.Error("campaign send", "err", err)
+		_ = emit(campaign.Event{Type: "error", Message: "campaign failed"})
+	}
 }
 
 func atoiDefault(s string, def int) int {

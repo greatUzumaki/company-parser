@@ -28,23 +28,23 @@ func NewRedis(redisURL string) (Cache, error) {
 // NewRedisFromClient wraps an existing client (used in tests with miniredis).
 func NewRedisFromClient(c *redis.Client) Cache { return &redisCache{rdb: c} }
 
-func (r *redisCache) Get(ctx context.Context, key string) ([]domain.Company, bool, error) {
+func (r *redisCache) Get(ctx context.Context, key string) (Entry, bool, error) {
 	b, err := r.rdb.Get(ctx, key).Bytes()
 	if errors.Is(err, redis.Nil) {
-		return nil, false, nil
+		return Entry{}, false, nil
 	}
 	if err != nil {
-		return nil, false, fmt.Errorf("cache: get: %w", err)
+		return Entry{}, false, fmt.Errorf("cache: get: %w", err)
 	}
-	companies, err := decode(b)
+	entry, err := decode(b)
 	if err != nil {
-		return nil, false, fmt.Errorf("cache: decode: %w", err)
+		return Entry{}, false, fmt.Errorf("cache: decode: %w", err)
 	}
-	return companies, true, nil
+	return entry, true, nil
 }
 
 func (r *redisCache) Set(ctx context.Context, key string, companies []domain.Company, ttl time.Duration) error {
-	b, err := encode(companies)
+	b, err := encode(Entry{Companies: companies, FetchedAt: time.Now()})
 	if err != nil {
 		return fmt.Errorf("cache: encode: %w", err)
 	}

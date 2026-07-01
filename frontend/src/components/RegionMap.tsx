@@ -15,20 +15,8 @@ import type { Feature, FeatureCollection, Geometry, Position } from "geojson";
 import countriesData from "@/data/countries.json";
 import { useSearch } from "@/store/useSearch";
 import { useHover } from "@/store/useHover";
+import { CONTACT_CHIPS, contactHref } from "@/lib/contacts";
 import type { Company, Region } from "@/lib/types";
-
-/** Normalize a website value to a safe http(s) URL, or null. Rejects any other
- *  scheme (javascript:, data:, …) so it can never execute on click. */
-function toHttpUrl(raw?: string): string | null {
-  if (!raw) return null;
-  const candidate = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
-  try {
-    const u = new URL(candidate);
-    return u.protocol === "http:" || u.protocol === "https:" ? u.toString() : null;
-  } catch {
-    return null;
-  }
-}
 
 /** Convert companies to a GeoJSON point collection for the markers layer.
  *  `key` doubles as the feature id (via promoteId) so the results list can
@@ -204,7 +192,7 @@ export function RegionMap({
             "case",
             ["boolean", ["feature-state", "hover"], false],
             9,
-            ["interpolate", ["linear"], ["zoom"], 3, 2.5, 10, 5, 16, 7],
+            5,
           ],
           "circle-color": [
             "case",
@@ -232,13 +220,14 @@ export function RegionMap({
       map.on("click", "company-points", (e: MapLayerMouseEvent) => {
         const f = e.features?.[0];
         if (!f || f.geometry.type !== "Point") return;
-        const p = (f.properties ?? {}) as { name?: string; category?: string; website?: string };
+        const p = (f.properties ?? {}) as Record<string, string | undefined>;
 
         // Build the popup as DOM with textContent — company data comes from
         // publicly editable sources (OSM), so it must never be treated as HTML.
         const root = document.createElement("div");
         root.style.font = "500 13px/1.4 system-ui";
         root.style.color = "#0f172a";
+        root.style.minWidth = "160px";
 
         const name = document.createElement("div");
         name.style.fontWeight = "600";
@@ -251,16 +240,23 @@ export function RegionMap({
         category.textContent = p.category ?? "";
         root.appendChild(category);
 
-        const url = toHttpUrl(p.website);
-        if (url) {
-          const link = document.createElement("a");
-          link.href = url; // property assignment; validated http(s) only
-          link.target = "_blank";
-          link.rel = "noopener noreferrer";
-          link.style.color = "#059669";
-          link.textContent = url.replace(/^https?:\/\//, "");
-          root.appendChild(link);
+        // Contact chips — each a validated link (tel:/mailto:/https:).
+        const chips = document.createElement("div");
+        chips.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin-top:6px";
+        for (const { kind, label } of CONTACT_CHIPS) {
+          const href = contactHref(kind, p[kind] ?? "");
+          if (!href) continue;
+          const a = document.createElement("a");
+          a.href = href; // property assignment; scheme validated above
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+          a.textContent = label;
+          a.title = p[kind] ?? "";
+          a.style.cssText =
+            "display:inline-block;padding:2px 7px;border-radius:9999px;background:#ecfdf5;color:#047857;font-weight:600;font-size:11px;text-decoration:none";
+          chips.appendChild(a);
         }
+        if (chips.childElementCount > 0) root.appendChild(chips);
 
         popup.setLngLat(f.geometry.coordinates as [number, number]).setDOMContent(root).addTo(map);
       });

@@ -1,14 +1,17 @@
 package api
 
 import (
+	"github.com/parse-companies/backend/internal/campaign"
 	"github.com/parse-companies/backend/internal/domain"
 	"github.com/parse-companies/backend/internal/store"
 )
 
-// searchRequest is the POST /api/v1/search body.
+// searchRequest is the POST /api/v1/search body. Force skips the cache and
+// re-queries the providers (used by the manual refresh button).
 type searchRequest struct {
 	Region  domain.Region `json:"region"`
 	Filters domain.Filter `json:"filters"`
+	Force   bool          `json:"force"`
 }
 
 // searchResponse is returned after a search runs.
@@ -22,6 +25,17 @@ type searchResponse struct {
 type searchDetailResponse struct {
 	Search  store.SearchSummary `json:"search"`
 	Results []domain.Company    `json:"results"`
+}
+
+// campaignRequest is the POST /api/v1/campaign/send body. Recipients are the
+// client-filtered targets; Confirm is the consent acknowledgement; DryRun
+// previews without sending.
+type campaignRequest struct {
+	Subject    string               `json:"subject"`
+	Body       string               `json:"body"`
+	Recipients []campaign.Recipient `json:"recipients"`
+	DryRun     bool                 `json:"dryRun"`
+	Confirm    bool                 `json:"confirm"`
 }
 
 // category is one selectable OSM business category.
