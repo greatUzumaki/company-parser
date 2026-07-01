@@ -1,0 +1,1 @@
+ALTER TABLE companies ADD COLUMN whatsapp TEXT NOT NULL DEFAULT '';

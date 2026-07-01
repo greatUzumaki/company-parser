@@ -34,10 +34,11 @@ type Provider interface {
    and `.env.example`.
 6. **Tests:** `client_test.go` with `httptest.Server` and a recorded fixture —
    assert mapping + filtering + the busy-error path.
-7. **Wire it:** in `cmd/server/main.go`, construct your provider and pass it to
-   `service.New(...)`. To support multiple sources at once, add a small
-   composite provider that fans out and merges by OSM/identity dedup — but keep
-   that logic in `service`, not in `api`.
+7. **Wire it:** in `cmd/server/main.go`, add your provider to the
+   `[]service.NamedProvider` slice passed to `service.New(...)`. The service
+   already fans out across all providers concurrently, merges, and dedups
+   (see `service/merge.go`) — for both the one-shot `Search` and the streaming
+   `SearchStream`. A new source shows up in the live progress UI automatically.
 
 ## Do NOT
 

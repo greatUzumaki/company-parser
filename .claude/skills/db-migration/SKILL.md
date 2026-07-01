@@ -31,16 +31,17 @@ make migrate-down         # roll back the most recent one
 
 `DATABASE_URL` comes from `.env`.
 
-## PostGIS notes
+## Coordinates (plain Postgres — no PostGIS)
 
-- The extension must exist before `0001`:
-  `CREATE EXTENSION IF NOT EXISTS postgis;` (first line of the init up-migration).
-  If the user's Postgres image lacks PostGIS, switch it to `postgis/postgis`.
-- Geometry column: `geom geometry(Point, 4326)`. Index it:
-  `CREATE INDEX ... USING GIST (geom);`.
-- Insert points with `ST_SetSRID(ST_MakePoint(lon, lat), 4326)`.
-- Region filtering: `ST_Within(geom, ST_GeomFromGeoJSON($1))` or bbox via
-  `ST_MakeEnvelope(minLon, minLat, maxLon, maxLat, 4326)`.
+The deployment Postgres has no PostGIS, so coordinates are plain columns:
+`lat DOUBLE PRECISION, lon DOUBLE PRECISION`, with a btree index
+`(lat, lon)`. Region scoping happens server-side in the Overpass query (by
+admin area); the DB stores coordinates for display/export, not spatial joins.
+
+If you ever need true spatial queries, do NOT alter the shared Postgres
+container — stand up a dedicated `postgis/postgis` instance and add `geom
+geometry(Point,4326)` there. Until then, bbox filtering is a plain
+`lat BETWEEN ... AND lon BETWEEN ...`.
 
 ## After a schema change
 

@@ -10,24 +10,21 @@ businesses with **no website**, **no socials**, or **no phone**.
 
 ## Stack
 
-- **Backend:** Go 1.23+ (hexagonal, `Provider` interface, pgx/sqlc, PostGIS, Redis cache)
+- **Backend:** Go 1.23+ (hexagonal, `Provider` interface, pgx/sqlc, Postgres, Redis cache)
 - **Frontend:** Next.js 15 + TypeScript + Tailwind/shadcn + MapLibre GL
 - **Data:** OpenStreetMap via Overpass API; Nominatim for region lookup
 
 ## Quick start
 
-Postgres (+PostGIS) and Redis are expected to already run in your Docker.
+Postgres and Redis are expected to already run in your Docker (no PostGIS needed).
 
 ```bash
 cp .env.example .env          # adjust DATABASE_URL / REDIS_URL
+createdb parse_companies      # or: docker exec postgres psql -U postgres -c "CREATE DATABASE parse_companies;"
 make migrate-up               # apply schema
 make dev                      # backend on :8080
 make frontend-dev             # frontend on :3000
 ```
-
-> PostGIS must be available. Check:
-> `psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS postgis;"`
-> If that fails, use a `postgis/postgis` image for Postgres.
 
 ## Project docs
 

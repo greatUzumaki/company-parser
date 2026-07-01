@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS search_results;
+DROP TABLE IF EXISTS searches;
+DROP TABLE IF EXISTS companies;

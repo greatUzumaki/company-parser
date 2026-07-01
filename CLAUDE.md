@@ -19,8 +19,8 @@ lead generation (find businesses with gaps — no website, no socials, no phone)
 | Layer | Tech |
 |---|---|
 | Backend | Go 1.23+, `net/http` ServeMux, `pgx/v5` + `sqlc`, `golang-migrate`, `excelize`, `log/slog`, `errgroup` |
-| Data | OpenStreetMap / Overpass API; Nominatim for region lookup |
-| Storage | Postgres + **PostGIS**, Redis (cache) — both run in the user's Docker |
+| Data | OpenStreetMap / Overpass API + **Wikidata** (SPARQL, CC0); Nominatim for region lookup. Multi-provider fan-out behind `Provider`; results merged + deduped. |
+| Storage | Postgres (plain — no PostGIS), Redis (cache) — both run in the user's Docker |
 | Frontend | Next.js 15 (App Router), TypeScript, Tailwind + shadcn/ui, **MapLibre GL**, TanStack Query + Table, zustand |
 
 ## Architecture — hexagonal
@@ -33,7 +33,7 @@ backend/internal/
   domain/      Company, Region, Filter — pure types, NO external deps
   provider/    Provider interface + overpass/ + nominatim/ impls
   service/     search orchestration, dedup, cache lookup
-  store/       pgx + sqlc repo (companies, searches) — PostGIS ST_Within
+  store/       pgx + sqlc repo (companies, searches) — plain lat/lon columns
   export/      json.go csv.go xlsx.go — all stream to io.Writer
   api/         http handlers, DTOs, error→status mapping
   cache/       redis wrapper

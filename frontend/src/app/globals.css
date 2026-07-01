@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  --color-accent: oklch(0.696 0.17 162.48); /* emerald-500 */
+  --color-accent-strong: oklch(0.596 0.145 163.225); /* emerald-600 */
+
+  --animate-shimmer: shimmer 1.6s ease-in-out infinite;
+
+  @keyframes shimmer {
+    0% {
+      background-position: -480px 0;
+    }
+    100% {
+      background-position: 480px 0;
+    }
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* Tailwind v4 no longer sets a pointer cursor on buttons — restore it for every
+   interactive element. */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+[role="switch"],
+[role="tab"],
+a[href],
+label[for],
+summary,
+select,
+input[type="checkbox"],
+input[type="radio"] {
+  cursor: pointer;
+}
+
+button:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+/* MapLibre canvas already sets its own cursors (grab/pointer); don't override. */
+
+/* Skeleton shimmer used during loading states. */
+.skeleton {
+  background-image: linear-gradient(
+    90deg,
+    rgba(148, 163, 184, 0.12) 0%,
+    rgba(148, 163, 184, 0.28) 50%,
+    rgba(148, 163, 184, 0.12) 100%
+  );
+  background-size: 480px 100%;
+  animation: var(--animate-shimmer);
+}
+
+/* Thin, modern scrollbars for inner scroll regions. */
+.scroll-slim {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.4) transparent;
+}
+.scroll-slim::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scroll-slim::-webkit-scrollbar-thumb {
+  background-color: rgba(100, 116, 139, 0.4);
+  border-radius: 9999px;
+}
+
+/* Keep MapLibre controls visually consistent with the app. */
+.maplibregl-ctrl-attrib {
+  font-size: 10px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
